@@ -7,57 +7,54 @@ This is using Meta Llama3 model, so requires adhering to all their licenses and 
 The inference is quite slow at present, will work on speeding it up in future. Not sure if this is hardware limited or whether code improvements might help too. 
 
 ################################################################################
-#### Step 1: Download model
-Download the desired Llama model from Meta website
-https://llama.meta.com/llama-downloads/
-
-You need to register, and then will receive an email with a URL containing the download key.
-
-Download the download.sh script from Meta's github 
-```
-wget https://raw.githubusercontent.com/meta-llama/llama3/main/download.sh
-```
-
-Run it
-```
-bash download.sh
-```
-
-When prompted, enter your url and chose the desired model(s). 
-Downloads take a while as they are large files!
+#### Step 1: Configure python environment
 
 ```
-15G     Meta-Llama-3-8B-Instruct
-15G     Meta-Llama-3-8B
-```
-
-**NOTE**
-Alternative is to download the preconverted model from huggingface directly. You just need to wait a few mins after registering for approval. In that case, step 3 below (to convert the model for hugging face compatibility) can be skipped. 
-
-################################################################################
-#### Step 2: Configure python environment
-
-```
-conda create --name llama3
-conda activate llama3
+conda create --name llama3.2
+conda activate llama3.2
 conda install notebook ipykernel
 ```
 
 Install necessary python packages
 ```
-pip install transformers torch blobfile tiktokenizer
+pip install transformers torch blobfile tiktoken llama-stack
 ```
 
 ##### Optional steps to setup environment for jupyter notebook
 Add the environment to jupyter
 ```
-python -m ipykernel install --user --name=llama3 --display-name "Python (llama3)"
+python -m ipykernel install --user --name=llama3.2 --display-name "Python (llama3.2)"
 
 # verify the environment is available in jupyter
 jupyter kernelspec list
 ```
 
 Ensure this environment is available within jupyter notebook by selecting it in the kernel
+
+
+################################################################################
+#### Step 2: Download model
+Download the desired Llama model from Meta website
+https://www.llama.com/llama-downloads/
+
+You need to register and accept the terms, then you will receive a URL containing the download key (also sent to your email).   
+
+Download the desired model using their command.
+```
+llama model download --source meta --model-id  meta-llama/Llama-3.2-1B-Instruct
+```
+
+When prompted, enter your url that contains your key.   
+Downloads take a while as they are large files!
+
+```
+6.0G    Llama3.2-3B-Instruct
+2.4G    Llama3.2-1B-Instruct
+```
+
+**NOTE**
+Alternative is to download the preconverted model from huggingface directly. You just need to wait a few mins after registering for approval. In that case, step 3 below (to convert the model for hugging face compatibility) can be skipped. 
+
 
 ################################################################################
 #### Step 3: Convert model weights
@@ -70,41 +67,35 @@ wget https://raw.githubusercontent.com/huggingface/transformers/main/src/transfo
 
 Run the script (make sure to specify the correct llama_version and model_size)
 ```
-python convert_llama_weights_to_hf.py --llama_version 3 --input_dir /home/dowens/projects/llama/Meta-Llama-3-8B --model_size 8B --output_dir /home/dowens/projects/llama/meta-llama-3-8b-hf
+python convert_llama_weights_to_hf.py --input_dir /home/dowens/.llama/checkpoints/Llama3.2-1B-Instruct --model_size 1B --llama_version 3.2 --output_dir /home/dowens/projects/llama/meta-llama-3.2-1b-hf
 ```
 
 ################################################################################
-#### Step 4: Load python scripts and perform inference with Llama-3-8B
+#### Step 4: Load python scripts and chat with Llama-3.2
 
-First download the helpels
-r functions from this repo
+First download the python functions from this repo
 ```
 wget dollama3.py
 ```
 
 Then enter python console and load the custom functions from the script
 ```
-conda activate llama3
+conda activate llama3.2
 python
-from dollama3 import load_llama, infer_llama
+from dollama3 import load_llama, chat_with_llama
 ```
 
-Load the model to the GPU (takes several minutes and uses all the RAM...)
+Load the model to the GPU (takes several minutes and uses all the RAM for larger models, 1B seems much faster!)
 ```
 load_llama()
 ```
 
 It will ask you for the path to the huggingface model, enter the full path like so
 ```
-/home/dowens/projects/llama/meta-llama-3-8b-hf
+/home/dowens/projects/llama/meta-llama-3.2-1b-hf
 ```
 
-Perform inference using the loaded model
+Chat with the loaded model
 ```
-infer_llama()
+chat_with_llama()
 ```
-
-It will ask you for the following:
-
-Specify how many tokens to get back from the model: # this is the length of the response you will get back
-Enter the input prompt to begin your inference: # this is the start of the prompt the model will complete
