@@ -1,141 +1,96 @@
-#!/usr/bin/env python3
-# Dominic Owens, November 2024
-# Updated to fix CUDA out of memory error by avoiding adding new tokens
-
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import contextlib
-import os
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from colorama import Fore, Style
 
-# Model global variables for inference
-model = None
-tokenizer = None
-device = None
+# Ask the user for the model size
+model_size = input(f"{Fore.RED}Enter the model size (1 for 1 billion parameters or 3 for 3 billion parameters): {Style.RESET_ALL}").strip().lower()
 
-def check_device():
-    global device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type == "cuda":
-        gpu_status = {
-            "name": torch.cuda.get_device_name(0),
-            "total_memory": f"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB"
-        }
-        print("Success: Device assigned to GPU.")
-        print("GPU Status:")
-        for key, value in gpu_status.items():
-            print(f"  {key}: {value}")
-    else:
-        print("Success: Device assigned to CPU.")
-    return device
+# Determine the model path based on the input
+if model_size in {"1", "1b", "1bn"}:
+    model_id = "/home/dowens/projects/llama/meta-llama-3.2-1b-hf"
+elif model_size in {"3", "3b", "3bn"}:
+    model_id = "/home/dowens/projects/llama/meta-llama-3.2-3b-hf"
+else:
+    print(f"{Fore.RED}Invalid model size. Please restart the script and enter a valid model size.{Style.RESET_ALL}")
+    exit()
 
-def load_llama():
-    global model, tokenizer, device
+# Load model and tokenizer
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.bfloat16, device_map="auto")
 
-    # Interactively ask the user for the path to the Hugging Face formatted model
-    model_path = input("Enter the path to your Hugging Face formatted llama3 model: ")
+# Set pad_token_id to eos_token_id if not already set
+if tokenizer.pad_token_id is None:
+    tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    # Check the GPU is available
-    device = check_device()
+# Initialize chat messages with system prompt
+sys_prompt = """
+    You are Domchi, an AI assistant designed to provide helpful, accurate, and conversational responses.
+    Your primary goal is to assist the user by answering questions, generating ideas, solving problems, and providing clear explanations.
+    
+    You should always: 
+    Be Polite and Professional: Maintain a friendly yet professional tone in all interactions.
+    Adapt to User Needs: Adjust the complexity of explanations based on the user's expertise level, which may range from beginner to advanced.
+    Stay Accurate and Up-to-Date: Provide accurate, fact-based information. If unsure, indicate uncertainty and offer ways to verify.
+    Provide Context and Examples: When explaining concepts, include context or examples to enhance understanding, unless the user specifies otherwise.
+    Focus on the Task: Stay on-topic and concise unless the user invites elaboration.
 
-    # Load the tokenizer and model, then move the model to the GPU if available
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+    When generating responses:
+    Use simple, clear language unless the user prefers technical details or specialized terminology.
+    Break complex topics into digestible parts.
+    Clarify ambiguities by asking follow-up questions.
 
-    # Ensure the model is in evaluation mode
-    model.eval()
+    Your role is to empower the user by facilitating learning, creativity, and problem-solving."""
+    
+messages = [{"role": "system", "content": sys_prompt}]
 
-    # Set pad_token_id to an existing token ID
-    if tokenizer.pad_token_id is None:
-        # Option 1: Use unk_token_id if available and different from eos_token_id
-        if tokenizer.unk_token_id is not None and tokenizer.unk_token_id != tokenizer.eos_token_id:
-            tokenizer.pad_token_id = tokenizer.unk_token_id
-        # Option 2: Use token ID 0 if it's not eos_token_id
-        elif tokenizer.eos_token_id != 0:
-            tokenizer.pad_token_id = 0
-        else:
-            # As a last resort, set pad_token_id to eos_token_id (may still cause warnings)
-            tokenizer.pad_token_id = tokenizer.eos_token_id
+# Define the function for generating responses
+def generate_response(messages, max_new_tokens=256):
+    prompt = ""
+    for msg in messages:
+        role = msg["role"]
+        content = msg["content"]
+        if role == "system":
+            prompt += f"[System] {content}\n"
+        elif role == "user":
+            prompt += f"[User] {content}\n"
+        elif role == "assistant":
+            prompt += f"[Assistant] {content}\n"
+    prompt += "[Assistant]"
 
-    # Check special tokens
-    print("Special Tokens:")
-    print(f"BOS token: {tokenizer.bos_token}, ID: {tokenizer.bos_token_id}")
-    print(f"EOS token: {tokenizer.eos_token}, ID: {tokenizer.eos_token_id}")
-    print(f"PAD token: {tokenizer.pad_token}, ID: {tokenizer.pad_token_id}")
+    # Tokenize input with attention mask
+    inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
+    inputs = inputs.to("cuda")
+    
+    # Generate response
+    outputs = model.generate(
+        input_ids=inputs["input_ids"],
+        attention_mask=inputs["attention_mask"],  # Add attention mask here
+        max_new_tokens=max_new_tokens,
+        pad_token_id=tokenizer.pad_token_id,  # Explicitly set pad_token_id
+        temperature=0.4,  # Lower temperature reduces randomness
+        #top_k=50,  # Limit to the top 50 tokens by probability
+        #top_p=0.9,  # Nucleus sampling: sum of probabilities is <= 0.9
+    )
+    
+    # Decode and extract assistant's response
+    decoded_output = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+    # Extract only the assistant's new response
+    response = decoded_output.split("[Assistant]")[-1].strip()
+    return response
 
-    # # If necessary, define missing tokens
-    # if tokenizer.eos_token is None:
-    #     tokenizer.eos_token = '</s>'
-    # if tokenizer.bos_token is None:
-    #     tokenizer.bos_token = '<s>'
-    # if tokenizer.pad_token is None:
-    #     tokenizer.pad_token = '<pad>'
-
-def chat_with_llama():
-    global model, tokenizer, device
-
-    print("Welcome to the Llama Chat! Type 'exit' to quit.")
-
-    while True:
-        # User input
-        user_input = input("You: ")
-        if user_input.lower() == 'exit':
-            print("Goodbye!")
-            break
-
-        # Format the prompt
-        input_prompt = f"""### Instruction:
-You are a helpful AI assistant called domchi.
-
-### User:
-{user_input}
-
-### Assistant:
-"""
-
-        # Tokenize the input and get attention mask
-        inputs = tokenizer(
-            input_prompt,
-            return_tensors='pt',
-            add_special_tokens=True,
-            padding=False
-        )
-        input_ids = inputs['input_ids'].to(device)
-        attention_mask = inputs['attention_mask'].to(device)
-
-        max_new_tokens = 200  # Increased to allow complete responses
-
-        # Generate the response
-        with torch.no_grad():
-            output_ids = model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=max_new_tokens,
-                num_return_sequences=1,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-                top_k=50,
-                no_repeat_ngram_size=3,
-                eos_token_id=tokenizer.eos_token_id,
-                pad_token_id=tokenizer.pad_token_id
-            )
-
-        # Decode and post-process the generated text
-        generated_ids = output_ids[0][input_ids.shape[1]:]
-        generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
-
-        # Stop at end markers
-        # EOS tokens not properly working, so this is a quick fix
-        # should be improved in future!
-        end_markers = ["### User:", "### Assistant:", tokenizer.eos_token]
-        for marker in end_markers:
-            if marker in generated_text:
-                generated_text = generated_text.split(marker)[0]
-                break
-
-        print(f"Model: {generated_text.strip()}")
-
-
-if __name__ == "__main__":
-    load_llama()
-    chat_with_llama()
+# Interactive session
+print(f"{Fore.RED}\n\nChat with Domchi! Type 'exit' to end the chat.\n\n{Style.RESET_ALL}")
+while True:
+    user_input = input(f"{Fore.BLUE}{Style.BRIGHT}").strip()
+    if user_input.lower() == "exit":
+        print(f"{Fore.GREEN}Bye-bye! See ya!{Style.RESET_ALL}")
+        break
+    # Add user message to messages
+    messages.append({"role": "user", "content": user_input})
+    print()  # Add a blank line to separate input and response
+    # Generate response
+    response = generate_response(messages)
+    print(f"{Fore.GREEN}{response}{Style.RESET_ALL}")
+    print()  # Add a blank line to separate input and response
+    # Add assistant's response to messages
+    messages.append({"role": "assistant", "content": response})

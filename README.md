@@ -6,8 +6,8 @@ This is using Meta Llama3 model, so requires adhering to all their licenses and 
 
 The inference is quite slow at present, will work on speeding it up in future. Not sure if this is hardware limited or whether code improvements might help too. 
 
-################################################################################
-#### Step 1: Configure python environment
+
+## Step 1: Configure python environment
 
 ```
 conda create --name llama3.2
@@ -32,8 +32,8 @@ jupyter kernelspec list
 Ensure this environment is available within jupyter notebook by selecting it in the kernel
 
 
-################################################################################
-#### Step 2: Download model
+
+## Step 2: Download model
 Download the desired Llama model from Meta website
 https://www.llama.com/llama-downloads/
 
@@ -56,8 +56,8 @@ Downloads take a while as they are large files!
 Alternative is to download the preconverted model from huggingface directly. You just need to wait a few mins after registering for approval. In that case, step 3 below (to convert the model for hugging face compatibility) can be skipped. 
 
 
-################################################################################
-#### Step 3: Convert model weights
+
+## Step 3: Convert model weights
 Need to convert model weights into a format huggingface can use (not required for -hf models directly from huggingface)
 
 Download the conversion script from huggingface transformers github here: 
@@ -70,8 +70,8 @@ Run the script (make sure to specify the correct llama_version and model_size)
 python convert_llama_weights_to_hf.py --input_dir /home/dowens/.llama/checkpoints/Llama3.2-1B-Instruct --model_size 1B --llama_version 3.2 --output_dir /home/dowens/projects/llama/meta-llama-3.2-1b-hf
 ```
 
-################################################################################
-#### Step 4: Load python scripts and chat with Llama-3.2
+
+## Step 4: Load python scripts and chat with Llama-3.2
 
 First download the python functions from this repo
 ```
